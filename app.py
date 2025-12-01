@@ -4,6 +4,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime, date
 import time
+import io # Thư viện để xử lý file Excel trong bộ nhớ
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(
@@ -71,11 +72,8 @@ def update_invoice(old_receipt_no, data_row):
     sheet = get_sheet("Sheet1")
     try:
         # Tìm ô chứa số phiếu (Giả sử số phiếu là duy nhất)
-        # Tìm chính xác số phiếu cũ để biết nó nằm ở dòng nào
         cell = sheet.find(str(old_receipt_no))
         if cell:
-            # Cập nhật từ cột A của dòng tìm thấy
-            # sheet.update dùng range A{row} để ghi đè dòng đó
             sheet.update(range_name=f"A{cell.row}", values=[data_row])
             return True
         else:
@@ -131,18 +129,68 @@ st.title("🌊 CÔNG TY GIẶT ỦI HẢI ÂU")
 
 # === 1. ADMIN PANEL ===
 if role == 'admin':
-    tab1, tab2, tab3 = st.tabs(["📊 Báo Cáo", "👥 Quản Lý Khách", "📝 Nhập/Sửa Phiếu"])
+    tab1, tab2, tab3 = st.tabs(["📊 Báo Cáo & Xuất File", "👥 Quản Lý Khách", "📝 Nhập/Sửa Phiếu"])
     
     with tab1:
-        st.subheader("Doanh thu")
+        st.subheader("Thống kê doanh thu")
         df = load_invoices()
+        
         if not df.empty:
+            # Chuyển đổi cột Ngày sang dạng datetime để lọc
             df['Ngày'] = pd.to_datetime(df['Ngày'])
-            # Sắp xếp theo ngày giảm dần để dễ xem
-            df = df.sort_values(by='Ngày', ascending=False)
-            st.dataframe(df, use_container_width=True)
-            total_kg = df['Tổng Kg'].sum() if 'Tổng Kg' in df.columns else 0
-            st.metric("Tổng sản lượng", f"{total_kg:,.1f} Kg")
+            
+            # --- BỘ LỌC THỜI GIAN ---
+            st.write("📅 **Chọn thời gian báo cáo:**")
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                # Mặc định lấy từ ngày 1 của tháng hiện tại
+                start_date = st.date_input("Từ ngày", value=date.today().replace(day=1))
+            with col_d2:
+                end_date = st.date_input("Đến ngày", value=date.today())
+            
+            # Lọc dữ liệu theo ngày đã chọn
+            # dt.date để so sánh chính xác ngày mà không quan tâm giờ phút
+            mask = (df['Ngày'].dt.date >= start_date) & (df['Ngày'].dt.date <= end_date)
+            filtered_df = df.loc[mask]
+            
+            if not filtered_df.empty:
+                # Sắp xếp phiếu mới nhất lên đầu
+                filtered_df = filtered_df.sort_values(by='Ngày', ascending=False)
+                
+                # Hiển thị số liệu tổng quan
+                total_kg = filtered_df['Tổng Kg'].sum() if 'Tổng Kg' in filtered_df.columns else 0
+                count_phieu = len(filtered_df)
+                
+                m1, m2 = st.columns(2)
+                m1.metric("Số lượng phiếu", f"{count_phieu} phiếu")
+                m2.metric("Tổng trọng lượng", f"{total_kg:,.1f} Kg")
+                
+                st.dataframe(filtered_df, use_container_width=True)
+                
+                # --- XUẤT FILE EXCEL (.XLSX) ---
+                st.markdown("---")
+                st.write("📥 **Xuất báo cáo:**")
+                
+                # Tạo file Excel trong bộ nhớ (Buffer)
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    # Xuất sheet Báo Cáo
+                    filtered_df.to_excel(writer, index=False, sheet_name='BaoCao')
+                    
+                # Nút tải xuống
+                file_name_excel = f"BaoCao_{start_date.strftime('%d-%m')}_den_{end_date.strftime('%d-%m')}.xlsx"
+                
+                st.download_button(
+                    label="Tải file Excel (.xlsx)",
+                    data=buffer.getvalue(),
+                    file_name=file_name_excel,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary"
+                )
+            else:
+                st.warning(f"Không tìm thấy phiếu nào từ ngày {start_date} đến {end_date}.")
+        else:
+            st.info("Chưa có dữ liệu trong hệ thống.")
     
     with tab2:
         st.subheader("Thêm khách hàng")
@@ -162,10 +210,8 @@ if role in ['staff', 'admin']:
     container = st.container() if role == 'staff' else tab3
 
     with container:
-        # --- CHỌN CHẾ ĐỘ: NHẬP MỚI HAY SỬA ---
         mode = st.radio("Thao tác:", ["✨ Tạo phiếu mới", "🛠 Sửa phiếu cũ"], horizontal=True)
         
-        # Biến để lưu dữ liệu form (mặc định là rỗng/ngày hiện tại)
         default_date = date.today()
         default_receipt = ""
         default_customer_idx = 0
@@ -173,34 +219,25 @@ if role in ['staff', 'admin']:
         default_note = ""
         default_total_kg = 0.0
         default_items_qty = [0] * len(ITEMS)
-        
-        # Biến này dùng để xác định dòng cần sửa trong Google Sheet
         target_receipt_to_update = None 
 
         df_users = load_users()
         customers_list = df_users[df_users['Role'] == 'customer']
         customer_names = customers_list['FullName'].tolist()
 
-        # LOGIC LOAD DỮ LIỆU CŨ KHI CHỌN "SỬA PHIẾU"
         if mode == "🛠 Sửa phiếu cũ":
             st.info("ℹ️ Chọn phiếu cần sửa từ danh sách bên dưới.")
             all_invoices = load_invoices()
             if not all_invoices.empty:
-                # Tạo danh sách hiển thị dễ đọc: Ngày - Số phiếu - Khách
                 all_invoices['Display'] = all_invoices['Ngày'].astype(str) + " - Số: " + all_invoices['Số phiếu'].astype(str) + " - " + all_invoices['Khách hàng']
-                # Đảo ngược để phiếu mới nhất lên đầu
                 invoice_options = all_invoices['Display'].tolist()[::-1]
                 
                 selected_invoice_str = st.selectbox("Tìm phiếu:", invoice_options)
                 
                 if selected_invoice_str:
-                    # Lấy dữ liệu dòng tương ứng
                     row_data = all_invoices[all_invoices['Display'] == selected_invoice_str].iloc[0]
+                    target_receipt_to_update = str(row_data['Số phiếu'])
                     
-                    # Cập nhật các biến mặc định
-                    target_receipt_to_update = str(row_data['Số phiếu']) # Lưu số phiếu gốc để tìm trong sheet
-                    
-                    # Convert ngày từ string về date object
                     try:
                         default_date = datetime.strptime(str(row_data['Ngày']), "%Y-%m-%d").date()
                     except:
@@ -208,7 +245,6 @@ if role in ['staff', 'admin']:
                         
                     default_receipt = str(row_data['Số phiếu'])
                     
-                    # Tìm index của khách hàng trong list để set default cho selectbox
                     if row_data['Khách hàng'] in customer_names:
                         default_customer_idx = customer_names.index(row_data['Khách hàng'])
                     
@@ -216,9 +252,6 @@ if role in ['staff', 'admin']:
                     default_note = row_data['Ghi chú']
                     default_total_kg = float(row_data['Tổng Kg']) if row_data['Tổng Kg'] else 0.0
                     
-                    # Lấy số lượng từng món (Mapping lại từ tên cột)
-                    # Cột trong Excel: ... | Tổng Kg | Áo gối | Áo choàng ...
-                    # ITEMS list thứ tự phải khớp với Excel
                     loaded_qtys = []
                     for item in ITEMS:
                         if item in row_data:
@@ -232,8 +265,6 @@ if role in ['staff', 'admin']:
             else:
                 st.warning("Chưa có phiếu nào để sửa.")
 
-        # --- FORM NHẬP LIỆU (DÙNG CHUNG CHO CẢ 2 CHẾ ĐỘ) ---
-        # Dùng key khác nhau cho mỗi mode để reset form khi đổi chế độ
         form_key = "new_form" if mode == "✨ Tạo phiếu mới" else "edit_form"
         
         with st.form(form_key):
@@ -241,7 +272,6 @@ if role in ['staff', 'admin']:
             c1, c2, c3 = st.columns([1, 1, 2])
             
             input_date = c1.date_input("Ngày", value=default_date)
-            # Nếu sửa phiếu, ta cho phép sửa số phiếu nhưng cần cảnh báo
             receipt_no = c2.text_input("Số phiếu", value=default_receipt)
             
             selected_customer = c3.selectbox(
@@ -250,7 +280,6 @@ if role in ['staff', 'admin']:
                 index=default_customer_idx
             )
             
-            # Logic địa chỉ: Nếu đang nhập mới thì auto-fill, nếu sửa thì giữ nguyên cái đã load
             if mode == "✨ Tạo phiếu mới":
                 current_addr = ""
                 if selected_customer:
@@ -264,7 +293,6 @@ if role in ['staff', 'admin']:
             note = st.text_area("Ghi chú", value=default_note, height=68)
 
             st.subheader("2. Chi tiết hàng hóa")
-            # Tạo DataFrame cho bảng nhập liệu
             input_df = pd.DataFrame({
                 "Tên mặt hàng": ITEMS,
                 "Số lượng": default_items_qty
@@ -283,14 +311,13 @@ if role in ['staff', 'admin']:
                 hide_index=True,
                 use_container_width=True,
                 height=500,
-                key=f"editor_{form_key}" # Key quan trọng để reset bảng
+                key=f"editor_{form_key}"
             )
 
             st.markdown("---")
             c_last1, c_last2 = st.columns([1, 3])
             total_weight = c_last1.number_input("⚖️ TỔNG KG", min_value=0.0, format="%.1f", value=default_total_kg)
             
-            # Nút Submit đổi tên tùy chế độ
             btn_label = "💾 LƯU PHIẾU MỚI" if mode == "✨ Tạo phiếu mới" else "💾 CẬP NHẬT THAY ĐỔI"
             submit_btn = st.form_submit_button(btn_label, type="primary", use_container_width=True)
 
@@ -298,7 +325,6 @@ if role in ['staff', 'admin']:
                 if not receipt_no:
                     st.error("Thiếu số phiếu!")
                 else:
-                    # Chuẩn bị dữ liệu
                     qty_map = dict(zip(edited_df["Tên mặt hàng"], edited_df["Số lượng"]))
                     
                     row_data = [
@@ -316,7 +342,6 @@ if role in ['staff', 'admin']:
                         save_invoice(row_data)
                         st.success(f"✅ Đã tạo mới phiếu {receipt_no}!")
                     else:
-                        # Logic cập nhật
                         if target_receipt_to_update:
                             success = update_invoice(target_receipt_to_update, row_data)
                             if success:
@@ -333,7 +358,6 @@ if role == 'customer':
     df = load_invoices()
     if not df.empty:
         my_inv = df[df['Khách hàng'] == full_name]
-        # Sắp xếp phiếu mới nhất lên đầu
         my_inv = my_inv.sort_values(by='Ngày', ascending=False)
         if not my_inv.empty:
             st.dataframe(my_inv, use_container_width=True)
