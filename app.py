@@ -4,7 +4,8 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime, date
 import time
-import io # Thư viện để xử lý file Excel trong bộ nhớ
+import io
+import openpyxl
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(
@@ -22,7 +23,11 @@ ITEMS = [
     "Mùng", "Gối ghế"
 ]
 
+SHEET_NAME = "QuanLyGiatUi_HaiAu" 
+
 # --- HÀM KẾT NỐI GOOGLE SHEET ---
+# Sử dụng cache_resource cho kết nối API để không phải kết nối lại liên tục
+@st.cache_resource
 def get_gspread_client():
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -34,8 +39,6 @@ def get_gspread_client():
         st.error(f"⚠️ Lỗi kết nối: {str(e)}")
         st.stop()
 
-SHEET_NAME = "QuanLyGiatUi_HaiAu" 
-
 def get_sheet(worksheet_name="Sheet1"):
     client = get_gspread_client()
     try:
@@ -45,9 +48,17 @@ def get_sheet(worksheet_name="Sheet1"):
         st.error(f"❌ Không tìm thấy trang tính '{worksheet_name}'. Hãy tạo nó trong Google Sheet!")
         st.stop()
 
-# --- HÀM DATA & AUTH ---
+# --- HÀM DATA & AUTH (CÓ CACHE) ---
+# Thêm TTL=60s: Dữ liệu tự làm mới sau 60s, nhưng ta sẽ ép làm mới ngay khi có thay đổi
+@st.cache_data(ttl=60)
 def load_users():
     sheet = get_sheet("Users")
+    data = sheet.get_all_records()
+    return pd.DataFrame(data)
+
+@st.cache_data(ttl=60)
+def load_invoices():
+    sheet = get_sheet("Sheet1")
     data = sheet.get_all_records()
     return pd.DataFrame(data)
 
@@ -62,10 +73,12 @@ def add_new_customer(username, password, fullname, address):
     sheet = get_sheet("Users")
     new_row = [username, password, "customer", fullname, address]
     sheet.append_row(new_row)
+    st.cache_data.clear() # Xóa cache ngay sau khi thêm
 
 def save_invoice(data_row):
     sheet = get_sheet("Sheet1")
     sheet.append_row(data_row)
+    st.cache_data.clear() # QUAN TRỌNG: Xóa cache để app tải dữ liệu mới ngay lập tức
 
 def update_invoice(old_receipt_no, data_row):
     """Tìm phiếu theo số phiếu cũ và cập nhật toàn bộ dòng"""
@@ -74,18 +87,20 @@ def update_invoice(old_receipt_no, data_row):
         # Tìm ô chứa số phiếu (Giả sử số phiếu là duy nhất)
         cell = sheet.find(str(old_receipt_no))
         if cell:
+            # Cập nhật dòng đó
+            # Chú ý: gspread update dùng index bắt đầu từ 1
+            # data_row là list giá trị. Cần update cả hàng.
+            # Range ví dụ: A2:Z2
+            end_col_char = chr(ord('A') + len(data_row) - 1) # Tính toán chữ cái cột cuối (chỉ đúng nếu < 26 cột, nhưng tạm ổn)
+            # Cách an toàn hơn với gspread:
             sheet.update(range_name=f"A{cell.row}", values=[data_row])
+            st.cache_data.clear() # QUAN TRỌNG: Xóa cache sau khi sửa
             return True
         else:
             return False
     except Exception as e:
         st.error(f"Lỗi khi cập nhật: {e}")
         return False
-
-def load_invoices():
-    sheet = get_sheet("Sheet1")
-    data = sheet.get_all_records()
-    return pd.DataFrame(data)
 
 # --- GIAO DIỆN ĐĂNG NHẬP ---
 if 'logged_in' not in st.session_state:
@@ -102,6 +117,8 @@ if not st.session_state.logged_in:
             submit = st.form_submit_button("Đăng nhập")
             
             if submit:
+                # Load users trực tiếp không qua cache để đảm bảo đúng nhất lúc login
+                st.cache_data.clear() 
                 df_users = load_users()
                 user = authenticate(username, password, df_users)
                 if user is not None:
@@ -133,31 +150,29 @@ if role == 'admin':
     
     with tab1:
         st.subheader("Thống kê doanh thu")
+        if st.button("🔄 Làm mới dữ liệu"):
+            st.cache_data.clear()
+            st.rerun()
+
         df = load_invoices()
         
         if not df.empty:
-            # Chuyển đổi cột Ngày sang dạng datetime để lọc
             df['Ngày'] = pd.to_datetime(df['Ngày'])
             
             # --- BỘ LỌC THỜI GIAN ---
             st.write("📅 **Chọn thời gian báo cáo:**")
             col_d1, col_d2 = st.columns(2)
             with col_d1:
-                # Mặc định lấy từ ngày 1 của tháng hiện tại
                 start_date = st.date_input("Từ ngày", value=date.today().replace(day=1))
             with col_d2:
                 end_date = st.date_input("Đến ngày", value=date.today())
             
-            # Lọc dữ liệu theo ngày đã chọn
-            # dt.date để so sánh chính xác ngày mà không quan tâm giờ phút
             mask = (df['Ngày'].dt.date >= start_date) & (df['Ngày'].dt.date <= end_date)
             filtered_df = df.loc[mask]
             
             if not filtered_df.empty:
-                # Sắp xếp phiếu mới nhất lên đầu
                 filtered_df = filtered_df.sort_values(by='Ngày', ascending=False)
                 
-                # Hiển thị số liệu tổng quan
                 total_kg = filtered_df['Tổng Kg'].sum() if 'Tổng Kg' in filtered_df.columns else 0
                 count_phieu = len(filtered_df)
                 
@@ -167,21 +182,15 @@ if role == 'admin':
                 
                 st.dataframe(filtered_df, use_container_width=True)
                 
-                # --- XUẤT FILE EXCEL (.XLSX) ---
                 st.markdown("---")
-                st.write("📥 **Xuất báo cáo:**")
-                
-                # Tạo file Excel trong bộ nhớ (Buffer)
+                # Xuất Excel
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    # Xuất sheet Báo Cáo
                     filtered_df.to_excel(writer, index=False, sheet_name='BaoCao')
                     
-                # Nút tải xuống
                 file_name_excel = f"BaoCao_{start_date.strftime('%d-%m')}_den_{end_date.strftime('%d-%m')}.xlsx"
-                
                 st.download_button(
-                    label="Tải file Excel (.xlsx)",
+                    label="📥 Tải file Excel (.xlsx)",
                     data=buffer.getvalue(),
                     file_name=file_name_excel,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -204,6 +213,8 @@ if role == 'admin':
                 if u and fn:
                     add_new_customer(u, p, fn, ad)
                     st.success(f"Đã thêm {fn}")
+                    time.sleep(1)
+                    st.rerun()
 
 # === 2. NHẬP LIỆU (STAFF + ADMIN) ===
 if role in ['staff', 'admin']:
@@ -220,6 +231,9 @@ if role in ['staff', 'admin']:
         default_total_kg = 0.0
         default_items_qty = [0] * len(ITEMS)
         target_receipt_to_update = None 
+        
+        # Biến này dùng để tạo key động cho data_editor giúp refresh dữ liệu
+        editor_key_suffix = "new"
 
         df_users = load_users()
         customers_list = df_users[df_users['Role'] == 'customer']
@@ -228,6 +242,7 @@ if role in ['staff', 'admin']:
         if mode == "🛠 Sửa phiếu cũ":
             st.info("ℹ️ Chọn phiếu cần sửa từ danh sách bên dưới.")
             all_invoices = load_invoices()
+            
             if not all_invoices.empty:
                 all_invoices['Display'] = all_invoices['Ngày'].astype(str) + " - Số: " + all_invoices['Số phiếu'].astype(str) + " - " + all_invoices['Khách hàng']
                 invoice_options = all_invoices['Display'].tolist()[::-1]
@@ -235,6 +250,9 @@ if role in ['staff', 'admin']:
                 selected_invoice_str = st.selectbox("Tìm phiếu:", invoice_options)
                 
                 if selected_invoice_str:
+                    # Gán suffix để data_editor hiểu là dữ liệu đã đổi
+                    editor_key_suffix = str(hash(selected_invoice_str))
+
                     row_data = all_invoices[all_invoices['Display'] == selected_invoice_str].iloc[0]
                     target_receipt_to_update = str(row_data['Số phiếu'])
                     
@@ -298,6 +316,7 @@ if role in ['staff', 'admin']:
                 "Số lượng": default_items_qty
             })
 
+            # Sử dụng editor_key_suffix để ép bảng làm mới khi chọn phiếu khác
             edited_df = st.data_editor(
                 input_df,
                 column_config={
@@ -311,7 +330,7 @@ if role in ['staff', 'admin']:
                 hide_index=True,
                 use_container_width=True,
                 height=500,
-                key=f"editor_{form_key}"
+                key=f"editor_{mode}_{editor_key_suffix}" 
             )
 
             st.markdown("---")
@@ -349,12 +368,16 @@ if role in ['staff', 'admin']:
                         else:
                             st.error("Lỗi: Không xác định được phiếu gốc để sửa.")
                     
-                    time.sleep(1)
+                    time.sleep(0.5)
                     st.rerun()
 
 # === 3. KHÁCH HÀNG XEM ===
 if role == 'customer':
     st.subheader(f"Lịch sử: {full_name}")
+    if st.button("🔄 Làm mới"):
+        st.cache_data.clear()
+        st.rerun()
+        
     df = load_invoices()
     if not df.empty:
         my_inv = df[df['Khách hàng'] == full_name]
