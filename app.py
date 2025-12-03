@@ -6,7 +6,6 @@ from datetime import datetime, date
 import time
 import io
 import openpyxl
-import textwrap  # Thư viện xử lý văn bản thụt dòng
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(
@@ -194,11 +193,13 @@ def delete_invoice(receipt_no):
         st.error(f"Lỗi khi xóa: {e}")
         return False
 
-# --- VIEW HÓA ĐƠN HTML (ĐÃ NÂNG CẤP VỚI TEXTWRAP) ---
+# --- VIEW HÓA ĐƠN HTML (FINAL FIX) ---
 def render_invoice_html(data):
+    """Tạo mã HTML hiển thị phiếu - Phiên bản không thụt dòng để tránh lỗi hiển thị"""
     items_html = ""
     stt = 1
-    # data là Series pandas của dòng phiếu được chọn
+    
+    # Tạo các dòng sản phẩm (Viết liền một dòng để tránh lỗi)
     for item in ITEMS:
         qty = data.get(item, 0)
         try:
@@ -207,101 +208,85 @@ def render_invoice_html(data):
             qty_val = 0
             
         if qty_val > 0:
-            # textwrap.dedent cho phép viết code thụt vào cho dễ đọc
-            # nhưng khi chạy sẽ tự động xóa khoảng trắng thừa
-            items_html += textwrap.dedent(f"""
-                <tr>
-                    <td style="text-align:center">{stt}</td>
-                    <td>{item}</td>
-                    <td style="text-align:center">{qty_val}</td>
-                    <td></td>
-                    <td></td>
-                </tr>
-            """)
+            items_html += f"<tr><td style='text-align:center'>{stt}</td><td>{item}</td><td style='text-align:center'>{qty_val}</td><td></td><td></td></tr>"
             stt += 1
     
-    # Lấp đầy bảng cho đủ dòng (giống mẫu giấy thường có nhiều dòng trống)
+    # Lấp đầy bảng cho đủ dòng
     while stt <= 10:
-         items_html += f"""<tr><td style="text-align:center">{stt}</td><td></td><td></td><td></td><td></td></tr>"""
+         items_html += f"<tr><td style='text-align:center'>{stt}</td><td></td><td></td><td></td><td></td></tr>"
          stt += 1
 
     date_obj = pd.to_datetime(data['Ngày'])
     day, month, year = date_obj.day, date_obj.month, date_obj.year
 
-    # textwrap.dedent giúp loại bỏ khoảng trắng thừa ở đầu toàn bộ khối HTML
-    html_content = textwrap.dedent(f"""
-        <div class="printable-area invoice-box">
-            <div style="display:flex; align-items:center;">
-                <div style="flex:1;">
-                    <img src="https://cdn-icons-png.flaticon.com/512/2983/2983720.png" width="60" style="float:left; margin-right:10px;">
-                    <b style="color:#003366">CÔNG TY TNHH GIẶT ỦI HẢI ÂU MŨI NÉ</b><br>
-                    <small>Thôn Thiện Sơn, Phường Mũi Né, Tỉnh Lâm Đồng</small><br>
-                    <small>Hotline: 037 808 2088 / 0908 848 393</small>
-                </div>
-            </div>
-            <hr>
-            <div class="invoice-header">
-                <h2>PHIẾU GIAO HÀNG SẠCH</h2>
-                <span>Số: <b style="color:red; font-size:1.2em">{data['Số phiếu']}</b></span>
-            </div>
-            
-            <table style="width:100%; margin-bottom:10px;">
-                <tr>
-                    <td><b>Tên khách hàng:</b> {data['Khách hàng']}</td>
-                    <td style="text-align:right"><b>Loại hàng:</b> Hàng Sạch</td>
-                </tr>
-                <tr>
-                    <td colspan="2"><b>Địa chỉ:</b> {data['Địa chỉ']}</td>
-                </tr>
-            </table>
-
-            <table class="invoice-table">
-                <thead>
-                    <tr>
-                        <th style="width:50px">STT</th>
-                        <th>Tên mặt hàng</th>
-                        <th style="width:100px">Số lượng</th>
-                        <th style="width:150px">Tình trạng</th>
-                        <th>Ghi chú</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {items_html}
-                </tbody>
-            </table>
-
-            <div class="total-section">
-                Tổng Cộng (Kg): {data['Tổng Kg']} Kg
-            </div>
-            
-            <div style="margin-top:10px;">
-                <i>Ghi chú chung: {data['Ghi chú']}</i>
-            </div>
-
-            <div style="text-align:right; margin-top:20px;">
-                <i>Ngày {day} tháng {month} năm {year}</i>
-            </div>
-
-            <div class="signature-section">
-                <div>
-                    <b>Người nhận hàng</b><br>
-                    <i>(Ký, họ tên)</i>
-                    <br><br><br><br>
-                </div>
-                <div>
-                    <b>Người giao hàng</b><br>
-                    <i>(Ký, họ tên)</i>
-                    <br><br><br><br>
-                </div>
-                <div>
-                    <b>Người lập phiếu</b><br>
-                    <i>(Ký, họ tên)</i>
-                    <br><br><br><br>
-                    Văn Thành
-                </div>
-            </div>
-        </div>
-    """)
+    # HTML viết sát lề trái tuyệt đối
+    html_content = f"""
+<div class="printable-area invoice-box">
+<div style="display:flex; align-items:center;">
+<div style="flex:1;">
+<img src="https://cdn-icons-png.flaticon.com/512/2983/2983720.png" width="60" style="float:left; margin-right:10px;">
+<b style="color:#003366">CÔNG TY TNHH GIẶT ỦI HẢI ÂU MŨI NÉ</b><br>
+<small>Thôn Thiện Sơn, Phường Mũi Né, Tỉnh Lâm Đồng</small><br>
+<small>Hotline: 037 808 2088 / 0908 848 393</small>
+</div>
+</div>
+<hr>
+<div class="invoice-header">
+<h2>PHIẾU GIAO HÀNG SẠCH</h2>
+<span>Số: <b style="color:red; font-size:1.2em">{data['Số phiếu']}</b></span>
+</div>
+<table style="width:100%; margin-bottom:10px;">
+<tr>
+<td><b>Tên khách hàng:</b> {data['Khách hàng']}</td>
+<td style="text-align:right"><b>Loại hàng:</b> Hàng Sạch</td>
+</tr>
+<tr>
+<td colspan="2"><b>Địa chỉ:</b> {data['Địa chỉ']}</td>
+</tr>
+</table>
+<table class="invoice-table">
+<thead>
+<tr>
+<th style="width:50px">STT</th>
+<th>Tên mặt hàng</th>
+<th style="width:100px">Số lượng</th>
+<th style="width:150px">Tình trạng</th>
+<th>Ghi chú</th>
+</tr>
+</thead>
+<tbody>
+{items_html}
+</tbody>
+</table>
+<div class="total-section">
+Tổng Cộng (Kg): {data['Tổng Kg']} Kg
+</div>
+<div style="margin-top:10px;">
+<i>Ghi chú chung: {data['Ghi chú']}</i>
+</div>
+<div style="text-align:right; margin-top:20px;">
+<i>Ngày {day} tháng {month} năm {year}</i>
+</div>
+<div class="signature-section">
+<div>
+<b>Người nhận hàng</b><br>
+<i>(Ký, họ tên)</i>
+<br><br><br><br>
+</div>
+<div>
+<b>Người giao hàng</b><br>
+<i>(Ký, họ tên)</i>
+<br><br><br><br>
+</div>
+<div>
+<b>Người lập phiếu</b><br>
+<i>(Ký, họ tên)</i>
+<br><br><br><br>
+Văn Thành
+</div>
+</div>
+</div>
+"""
     return html_content
 
 # --- GIAO DIỆN LOGIN ---
@@ -592,7 +577,7 @@ if role == 'admin':
                     # Render HTML
                     invoice_html = render_invoice_html(selected_row)
                     
-                    st.info("💡 Mẹo: Nhấn Ctrl + P (hoặc Command + P) để in trang này. Hệ thống sẽ tự động ẩn các thanh menu, chỉ in phần hóa đơn bên dưới.")
+                    st.info("💡 Mẹo: Nhấn Ctrl + P (hoặc Command + P) để in trang này thành PDF. Hệ thống sẽ tự động ẩn các thanh menu, chỉ in phần hóa đơn.")
                     
                     # Hiển thị khung hóa đơn
                     st.markdown(invoice_html, unsafe_allow_html=True)
@@ -606,4 +591,3 @@ if role == 'customer':
     if not df.empty:
         my_inv = df[df['Khách hàng'] == full_name].sort_values(by='Ngày', ascending=False)
         st.dataframe(my_inv, use_container_width=True)
-
