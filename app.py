@@ -282,7 +282,7 @@ Tổng Cộng (Kg): {data['Tổng Kg']} Kg
 <b>Người lập phiếu</b><br>
 <i>(Ký, họ tên)</i>
 <br><br><br><br>
-Văn Thành
+
 </div>
 </div>
 </div>
@@ -591,3 +591,4 @@ if role == 'customer':
     if not df.empty:
         my_inv = df[df['Khách hàng'] == full_name].sort_values(by='Ngày', ascending=False)
         st.dataframe(my_inv, use_container_width=True)
+
