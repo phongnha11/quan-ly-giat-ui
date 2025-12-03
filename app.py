@@ -15,7 +15,6 @@ st.set_page_config(
 )
 
 # --- CSS TÙY CHỈNH CHO HÓA ĐƠN ---
-# Tạo giao diện in ấn giống mẫu thật
 st.markdown("""
 <style>
     @media print {
@@ -231,79 +230,80 @@ def render_invoice_html(data):
     date_obj = pd.to_datetime(data['Ngày'])
     day, month, year = date_obj.day, date_obj.month, date_obj.year
 
+    # QUAN TRỌNG: Đoạn HTML này phải nằm sát lề trái, không được thụt dòng
     html_content = f"""
-    <div class="printable-area invoice-box">
-        <div style="display:flex; align-items:center;">
-            <div style="flex:1;">
-                <img src="https://cdn-icons-png.flaticon.com/512/2983/2983720.png" width="60" style="float:left; margin-right:10px;">
-                <b style="color:#003366">CÔNG TY TNHH GIẶT ỦI HẢI ÂU MŨI NÉ</b><br>
-                <small>Thôn Thiện Sơn, Phường Mũi Né, Tỉnh Lâm Đồng</small><br>
-                <small>Hotline: 037 808 2088 / 0908 848 393</small>
-            </div>
-        </div>
-        <hr>
-        <div class="invoice-header">
-            <h2>PHIẾU GIAO HÀNG SẠCH</h2>
-            <span>Số: <b style="color:red; font-size:1.2em">{data['Số phiếu']}</b></span>
-        </div>
-        
-        <table style="width:100%; margin-bottom:10px;">
-            <tr>
-                <td><b>Tên khách hàng:</b> {data['Khách hàng']}</td>
-                <td style="text-align:right"><b>Loại hàng:</b> Hàng Sạch</td>
-            </tr>
-            <tr>
-                <td colspan="2"><b>Địa chỉ:</b> {data['Địa chỉ']}</td>
-            </tr>
-        </table>
-
-        <table class="invoice-table">
-            <thead>
-                <tr>
-                    <th style="width:50px">STT</th>
-                    <th>Tên mặt hàng</th>
-                    <th style="width:100px">Số lượng</th>
-                    <th style="width:150px">Tình trạng</th>
-                    <th>Ghi chú</th>
-                </tr>
-            </thead>
-            <tbody>
-                {items_html}
-            </tbody>
-        </table>
-
-        <div class="total-section">
-            Tổng Cộng (Kg): {data['Tổng Kg']} Kg
-        </div>
-        
-        <div style="margin-top:10px;">
-            <i>Ghi chú chung: {data['Ghi chú']}</i>
-        </div>
-
-        <div style="text-align:right; margin-top:20px;">
-            <i>Ngày {day} tháng {month} năm {year}</i>
-        </div>
-
-        <div class="signature-section">
-            <div>
-                <b>Người nhận hàng</b><br>
-                <i>(Ký, họ tên)</i>
-                <br><br><br><br>
-            </div>
-            <div>
-                <b>Người giao hàng</b><br>
-                <i>(Ký, họ tên)</i>
-                <br><br><br><br>
-            </div>
-            <div>
-                <b>Người lập phiếu</b><br>
-                <i>(Ký, họ tên)</i>
-                <br><br><br><br>
-                Văn Thành
-            </div>
+<div class="printable-area invoice-box">
+    <div style="display:flex; align-items:center;">
+        <div style="flex:1;">
+            <img src="https://cdn-icons-png.flaticon.com/512/2983/2983720.png" width="60" style="float:left; margin-right:10px;">
+            <b style="color:#003366">CÔNG TY TNHH GIẶT ỦI HẢI ÂU MŨI NÉ</b><br>
+            <small>Thôn Thiện Sơn, Phường Mũi Né, Tỉnh Lâm Đồng</small><br>
+            <small>Hotline: 037 808 2088 / 0908 848 393</small>
         </div>
     </div>
-    """
+    <hr>
+    <div class="invoice-header">
+        <h2>PHIẾU GIAO HÀNG SẠCH</h2>
+        <span>Số: <b style="color:red; font-size:1.2em">{data['Số phiếu']}</b></span>
+    </div>
+    
+    <table style="width:100%; margin-bottom:10px;">
+        <tr>
+            <td><b>Tên khách hàng:</b> {data['Khách hàng']}</td>
+            <td style="text-align:right"><b>Loại hàng:</b> Hàng Sạch</td>
+        </tr>
+        <tr>
+            <td colspan="2"><b>Địa chỉ:</b> {data['Địa chỉ']}</td>
+        </tr>
+    </table>
+
+    <table class="invoice-table">
+        <thead>
+            <tr>
+                <th style="width:50px">STT</th>
+                <th>Tên mặt hàng</th>
+                <th style="width:100px">Số lượng</th>
+                <th style="width:150px">Tình trạng</th>
+                <th>Ghi chú</th>
+            </tr>
+        </thead>
+        <tbody>
+            {items_html}
+        </tbody>
+    </table>
+
+    <div class="total-section">
+        Tổng Cộng (Kg): {data['Tổng Kg']} Kg
+    </div>
+    
+    <div style="margin-top:10px;">
+        <i>Ghi chú chung: {data['Ghi chú']}</i>
+    </div>
+
+    <div style="text-align:right; margin-top:20px;">
+        <i>Ngày {day} tháng {month} năm {year}</i>
+    </div>
+
+    <div class="signature-section">
+        <div>
+            <b>Người nhận hàng</b><br>
+            <i>(Ký, họ tên)</i>
+            <br><br><br><br>
+        </div>
+        <div>
+            <b>Người giao hàng</b><br>
+            <i>(Ký, họ tên)</i>
+            <br><br><br><br>
+        </div>
+        <div>
+            <b>Người lập phiếu</b><br>
+            <i>(Ký, họ tên)</i>
+            <br><br><br><br>
+            Văn Thành
+        </div>
+    </div>
+</div>
+"""
     return html_content
 
 # --- GIAO DIỆN LOGIN ---
@@ -561,25 +561,33 @@ if role == 'admin':
             m1.metric("Số phiếu", len(filtered_df))
             m2.metric("Tổng lượng", f"{filtered_df['Tổng Kg'].sum() if not filtered_df.empty else 0:,.1f} Kg")
             
+            # --- HIỂN THỊ DANH SÁCH (ĐÃ KHÔI PHỤC) ---
+            st.markdown("### 📋 Danh sách đơn hàng chi tiết")
+            st.dataframe(filtered_df, use_container_width=True)
+            
             # 2. Danh sách phiếu để chọn IN
-            st.markdown("### 🖨 Chọn phiếu để in hóa đơn")
+            st.markdown("---")
+            st.markdown("### 🖨 In hóa đơn")
             if not filtered_df.empty:
                 # Tạo cột display để selectbox
                 filtered_df['Display_Print'] = filtered_df['Ngày'].dt.strftime('%d/%m') + " - Số: " + filtered_df['Số phiếu'].astype(str) + " - " + filtered_df['Khách hàng']
                 
                 c_sel, c_view = st.columns([3, 1])
-                print_selection = c_sel.selectbox("Chọn phiếu:", filtered_df['Display_Print'])
+                
+                # Thêm lựa chọn mặc định để không hiện hóa đơn ngay lập tức
+                options = ["-- Chọn phiếu cần in --"] + filtered_df['Display_Print'].tolist()
+                print_selection = c_sel.selectbox("Tìm và chọn phiếu:", options)
                 
                 # Nút xuất Excel
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    filtered_df.drop(columns=['Display_Print']).to_excel(writer, index=False)
-                c_view.download_button("📥 Xuất Excel list này", buffer.getvalue(), "baocao.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                
-                st.markdown("---")
+                    # Bỏ cột Display_Print khi xuất excel để file đẹp hơn
+                    filtered_df.drop(columns=['Display_Print'], errors='ignore').to_excel(writer, index=False)
+                c_view.download_button("📥 Xuất Excel", buffer.getvalue(), "baocao.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 
                 # 3. Hiển thị mẫu in
-                if print_selection:
+                if print_selection and print_selection != "-- Chọn phiếu cần in --":
+                    st.markdown("---")
                     # Lấy dòng dữ liệu được chọn
                     selected_row = filtered_df[filtered_df['Display_Print'] == print_selection].iloc[0]
                     
