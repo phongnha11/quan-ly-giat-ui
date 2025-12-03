@@ -6,6 +6,7 @@ from datetime import datetime, date
 import time
 import io
 import openpyxl
+import textwrap
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(
@@ -14,23 +15,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- CSS TÙY CHỈNH CHO HÓA ĐƠN ---
+# --- CSS TÙY CHỈNH CHO HÓA ĐƠN (ĐÃ TỐI ƯU IN ẤN) ---
 st.markdown("""
 <style>
-    @media print {
-        body * {
-            visibility: hidden;
-        }
-        .printable-area, .printable-area * {
-            visibility: visible;
-        }
-        .printable-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-        }
-    }
+    /* 1. Cấu hình hiển thị trên màn hình thường */
     .invoice-box {
         max-width: 800px;
         margin: auto;
@@ -43,6 +31,52 @@ st.markdown("""
         color: #555;
         background-color: white;
     }
+
+    /* 2. Cấu hình CHUYÊN DỤNG cho máy in (Ctrl+P) */
+    @media print {
+        /* Ẩn toàn bộ giao diện Streamlit (Header, Sidebar, Footer, Menu...) */
+        [data-testid="stHeader"],
+        [data-testid="stSidebar"],
+        [data-testid="stToolbar"],
+        footer,
+        .stDeployButton {
+            display: none !important;
+        }
+
+        /* Ẩn tất cả các phần tử trong body */
+        body * {
+            visibility: hidden;
+        }
+
+        /* Chỉ hiển thị vùng hóa đơn */
+        .printable-area, .printable-area * {
+            visibility: visible;
+        }
+
+        /* Đưa hóa đơn về vị trí gốc tọa độ, đè lên mọi thứ */
+        .printable-area {
+            position: fixed !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100vw !important; /* Chiếm toàn bộ chiều ngang khổ giấy */
+            margin: 0 !important;
+            padding: 20px !important; /* Cách lề giấy một chút cho đẹp */
+            background: white !important;
+            z-index: 999999 !important;
+            
+            /* Xóa bỏ border và shadow khi in để giống giấy tờ thật */
+            border: none !important;
+            box-shadow: none !important;
+        }
+
+        /* Thiết lập trang in A4/A5 tự động loại bỏ lề của trình duyệt */
+        @page {
+            size: auto;   /* Tự động theo khổ giấy */
+            margin: 0mm;  /* Xóa lề mặc định của trình duyệt để tránh in ra trang trắng thứ 2 */
+        }
+    }
+
+    /* Style cho các thành phần bên trong hóa đơn */
     .invoice-header {
         text-align: center;
         color: #003366;
@@ -61,6 +95,7 @@ st.markdown("""
     .invoice-table th {
         background-color: #f2f2f2;
         text-align: center;
+        -webkit-print-color-adjust: exact; /* Giữ màu nền xám khi in */
     }
     .total-section {
         margin-top: 20px;
@@ -282,7 +317,7 @@ Tổng Cộng (Kg): {data['Tổng Kg']} Kg
 <b>Người lập phiếu</b><br>
 <i>(Ký, họ tên)</i>
 <br><br><br><br>
-
+Văn Thành
 </div>
 </div>
 </div>
@@ -591,4 +626,3 @@ if role == 'customer':
     if not df.empty:
         my_inv = df[df['Khách hàng'] == full_name].sort_values(by='Ngày', ascending=False)
         st.dataframe(my_inv, use_container_width=True)
-
